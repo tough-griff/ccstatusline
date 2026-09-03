@@ -1,4 +1,10 @@
-import { execSync } from 'child_process';
+import {
+    execSync,
+    spawnSync
+} from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
     afterEach,
     beforeEach,
@@ -18,6 +24,19 @@ vi.mock('child_process', () => ({
     execFileSync: vi.fn(),
     spawnSync: vi.fn()
 }));
+
+function clearWindowsWidthCache(): void {
+    try {
+        const dir = os.tmpdir();
+        for (const file of fs.readdirSync(dir)) {
+            if (file.startsWith('ccstatusline-win-width-') && file.endsWith('.json')) {
+                fs.rmSync(path.join(dir, file), { force: true });
+            }
+        }
+    } catch {
+        // ignore
+    }
+}
 
 describe('terminal utils', () => {
     const mockExecSync = execSync as unknown as {
@@ -272,11 +291,92 @@ describe('terminal utils', () => {
         expect(mockExecSync.mock.calls.length).toBe(0);
     });
 
-    it('disables width detection on Windows', () => {
-        setPlatform('win32');
+    describe('Windows width detection', () => {
+        interface SpawnResult { status: number; stdout: string; stderr: string }
+        const mockSpawnSync = spawnSync as unknown as {
+            mock: { calls: unknown[][] };
+            mockImplementation: (impl: (cmd: string, args: string[], opts?: unknown) => SpawnResult) => void;
+            mockImplementationOnce: (impl: () => never) => void;
+        };
 
-        expect(getTerminalWidth()).toBeNull();
-        expect(canDetectTerminalWidth()).toBe(false);
-        expect(mockExecSync.mock.calls.length).toBe(0);
+        // The win32 branch returns process.stdout.columns directly when stdout is
+        // a TTY, short-circuiting the probe. Running the suite in an interactive
+        // terminal would otherwise make these tests read the real terminal width
+        // instead of the mocked probe result, so force non-TTY here.
+        const originalIsTTY = process.stdout.isTTY;
+        const originalColumns = process.stdout.columns;
+
+        beforeEach(() => {
+            (process.stdout as { isTTY?: boolean }).isTTY = false;
+            clearWindowsWidthCache();
+        });
+
+        afterEach(() => {
+            (process.stdout as { isTTY?: boolean }).isTTY = originalIsTTY;
+            (process.stdout as { columns?: number }).columns = originalColumns;
+            clearWindowsWidthCache();
+        });
+
+        it('parses a width from the PowerShell probe output', () => {
+            setPlatform('win32');
+            mockSpawnSync.mockImplementation(() => ({ status: 0, stdout: '209\n', stderr: '' }));
+
+            expect(getTerminalWidth()).toBe(209);
+            expect(mockSpawnSync.mock.calls.length).toBe(1);
+            const [cmd, args] = mockSpawnSync.mock.calls[0] as [string, string[]];
+            expect(cmd).toBe('powershell.exe');
+            const encodedIndex = args.indexOf('-EncodedCommand');
+            expect(encodedIndex).toBeGreaterThanOrEqual(0);
+            const decoded = Buffer.from(args[encodedIndex + 1] ?? '', 'base64').toString('utf16le');
+            // Guards against regressions where the script is silently
+            // replaced or gutted during a refactor. The probe must
+            // enumerate processes (Get-CimInstance Win32_Process) and
+            // attach to each ancestor's console to read its width
+            // (AttachConsole + GetConsoleScreenBufferInfo).
+            expect(decoded).toContain('Get-CimInstance');
+            expect(decoded).toContain('Win32_Process');
+            expect(decoded).toContain('AttachConsole');
+            expect(decoded).toContain('GetConsoleScreenBufferInfo');
+        });
+
+        it('returns null when no ancestor has an attachable console', () => {
+            setPlatform('win32');
+            mockSpawnSync.mockImplementation(() => ({ status: 0, stdout: '\n', stderr: '' }));
+
+            expect(getTerminalWidth()).toBeNull();
+        });
+
+        it('returns null when the probe exits non-zero', () => {
+            setPlatform('win32');
+            mockSpawnSync.mockImplementation(() => ({ status: 1, stdout: '', stderr: 'oops' }));
+
+            expect(getTerminalWidth()).toBeNull();
+        });
+
+        it('returns null when spawnSync throws', () => {
+            setPlatform('win32');
+            mockSpawnSync.mockImplementationOnce(() => { throw new Error('pwsh missing'); });
+
+            expect(getTerminalWidth()).toBeNull();
+        });
+
+        it('serves a fresh cached width without spawning PowerShell again', () => {
+            setPlatform('win32');
+            mockSpawnSync.mockImplementation(() => ({ status: 0, stdout: '209\n', stderr: '' }));
+
+            expect(getTerminalWidth()).toBe(209);
+            expect(mockSpawnSync.mock.calls.length).toBe(1);
+
+            expect(getTerminalWidth()).toBe(209);
+            expect(mockSpawnSync.mock.calls.length).toBe(1);
+        });
+
+        it('does not fall through to the Unix ps/stty probes on Windows', () => {
+            setPlatform('win32');
+            mockSpawnSync.mockImplementation(() => ({ status: 0, stdout: '120\n', stderr: '' }));
+
+            expect(canDetectTerminalWidth()).toBe(true);
+            expect(mockExecSync.mock.calls.length).toBe(0);
+        });
     });
 });
