@@ -2,24 +2,36 @@ import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
     CustomKeybind,
+    HideableState,
     Widget,
     WidgetEditorDisplay,
     WidgetItem
 } from '../types/Widget';
 import {
+    formatPercent,
+    resolveNumberFormat
+} from '../utils/number-format';
+import {
     getUsageErrorMessage,
-    makeUsageProgressBar
+    resolveUsageWindowWithFallback
 } from '../utils/usage';
 
+import { isHidden } from './shared/hideable';
+import { makeTimerProgressBar } from './shared/progress-bar';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
+    USAGE_NO_DATA_HIDEABLE_STATE,
     cycleUsageDisplayMode,
     getUsageDisplayMode,
     getUsageDisplayModifierText,
     getUsagePercentCustomKeybinds,
     getUsageProgressBarWidth,
+    isUsageCursorEnabled,
     isUsageInverted,
     isUsageProgressMode,
+    isUsageSliderMode,
+    makeSliderBar,
+    toggleUsageCursor,
     toggleUsageInverted
 } from './shared/usage-display';
 
@@ -32,17 +44,25 @@ export class SessionUsageWidget implements Widget {
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
             displayText: this.getDisplayName(),
-            modifierText: getUsageDisplayModifierText(item)
+            modifierText: getUsageDisplayModifierText(item, { showUsageDirection: true })
         };
+    }
+
+    getHideableStates(): HideableState[] {
+        return [USAGE_NO_DATA_HIDEABLE_STATE];
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
         if (action === 'toggle-progress') {
-            return cycleUsageDisplayMode(item);
+            return cycleUsageDisplayMode(item, [], true, true);
         }
 
         if (action === 'toggle-invert') {
             return toggleUsageInverted(item);
+        }
+
+        if (action === 'toggle-cursor') {
+            return toggleUsageCursor(item);
         }
 
         return null;
@@ -51,6 +71,8 @@ export class SessionUsageWidget implements Widget {
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const displayMode = getUsageDisplayMode(item);
         const inverted = isUsageInverted(item);
+        const showCursor = isUsageCursorEnabled(item);
+        const format = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
             const previewPercent = 20;
@@ -58,28 +80,56 @@ export class SessionUsageWidget implements Widget {
 
             if (isUsageProgressMode(displayMode)) {
                 const width = getUsageProgressBarWidth(displayMode);
-                const progressDisplay = `${makeUsageProgressBar(renderedPercent, width)} ${renderedPercent.toFixed(1)}%`;
+                const progressBar = makeTimerProgressBar(renderedPercent, width, showCursor ? { cursorPercent: 50 } : undefined);
+                const progressDisplay = `[${progressBar}] ${formatPercent(renderedPercent, format)}`;
                 return formatRawOrLabeledValue(item, 'Session: ', progressDisplay);
             }
 
-            return formatRawOrLabeledValue(item, 'Session: ', `${previewPercent.toFixed(1)}%`);
+            if (isUsageSliderMode(displayMode)) {
+                const slider = makeSliderBar(renderedPercent, undefined, showCursor ? { cursorPercent: 50 } : undefined);
+                const sliderDisplay = displayMode === 'slider' ? `${slider} ${formatPercent(renderedPercent, format)}` : slider;
+                return formatRawOrLabeledValue(item, 'Session: ', sliderDisplay);
+            }
+
+            return formatRawOrLabeledValue(item, 'Session: ', formatPercent(renderedPercent, format));
         }
 
         const data = context.usageData ?? {};
-        if (data.error)
-            return getUsageErrorMessage(data.error);
-        if (data.sessionUsage === undefined)
+        if (data.sessionUsage === undefined) {
+            if (data.error) {
+                return isHidden(item, USAGE_NO_DATA_HIDEABLE_STATE.key)
+                    ? null
+                    : getUsageErrorMessage(data.error);
+            }
             return null;
+        }
 
         const percent = Math.max(0, Math.min(100, data.sessionUsage));
+        const renderedPercent = inverted ? 100 - percent : percent;
+        const getCursorOptions = (): { cursorPercent: number } | undefined => {
+            if (!showCursor) {
+                return undefined;
+            }
+
+            const window = resolveUsageWindowWithFallback(data, context.blockMetrics);
+            return window ? { cursorPercent: window.elapsedPercent } : undefined;
+        };
+
         if (isUsageProgressMode(displayMode)) {
             const width = getUsageProgressBarWidth(displayMode);
-            const renderedPercent = inverted ? 100 - percent : percent;
-            const progressDisplay = `${makeUsageProgressBar(renderedPercent, width)} ${renderedPercent.toFixed(1)}%`;
+
+            const progressBar = makeTimerProgressBar(renderedPercent, width, getCursorOptions());
+            const progressDisplay = `[${progressBar}] ${formatPercent(renderedPercent, format)}`;
             return formatRawOrLabeledValue(item, 'Session: ', progressDisplay);
         }
 
-        return formatRawOrLabeledValue(item, 'Session: ', `${percent.toFixed(1)}%`);
+        if (isUsageSliderMode(displayMode)) {
+            const slider = makeSliderBar(renderedPercent, undefined, getCursorOptions());
+            const sliderDisplay = displayMode === 'slider' ? `${slider} ${formatPercent(renderedPercent, format)}` : slider;
+            return formatRawOrLabeledValue(item, 'Session: ', sliderDisplay);
+        }
+
+        return formatRawOrLabeledValue(item, 'Session: ', formatPercent(renderedPercent, format));
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
@@ -88,4 +138,5 @@ export class SessionUsageWidget implements Widget {
 
     supportsRawValue(): boolean { return true; }
     supportsColors(item: WidgetItem): boolean { return true; }
+    supportsNumberFormat(): boolean { return true; }
 }

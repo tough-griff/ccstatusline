@@ -60,13 +60,18 @@ export class CustomCommandWidget implements Widget {
         } else if (item.commandPath && context.data) {
             try {
                 const timeout = item.timeout ?? 1000;
-                const jsonInput = JSON.stringify(context.data);
+                const jsonInput = JSON.stringify(
+                    typeof context.terminalWidth === 'number'
+                        ? { ...context.data, terminal_width: context.terminalWidth }
+                        : context.data
+                );
                 let output = execSync(item.commandPath, {
                     encoding: 'utf8',
                     input: jsonInput,
                     timeout: timeout,
                     stdio: ['pipe', 'pipe', 'ignore'],
-                    env: process.env
+                    env: process.env,
+                    windowsHide: true
                 }).trim();
 
                 // Strip ANSI codes if preserveColors is false
@@ -117,6 +122,10 @@ export class CustomCommandWidget implements Widget {
 
     renderEditor(props: WidgetEditorProps): React.ReactElement {
         return <CustomCommandEditor {...props} />;
+    }
+
+    preservesRenderedColors(item: WidgetItem): boolean {
+        return item.preserveColors === true;
     }
 
     supportsRawValue(): boolean { return false; }

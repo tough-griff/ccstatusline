@@ -11,6 +11,7 @@ import type {
     RenderContext,
     WidgetItem
 } from '../../types';
+import { expectGitExecOptions } from '../../utils/__tests__/git-test-helpers';
 import { clearGitCache } from '../../utils/git';
 import { GitWorktreeWidget } from '../GitWorktree';
 
@@ -42,7 +43,7 @@ function render(options: {
         id: 'git-worktree',
         type: 'git-worktree',
         rawValue: options.rawValue,
-        metadata: options.hideNoGit ? { hideNoGit: 'true' } : undefined
+        metadata: options.hideNoGit ? { hide: 'no-git' } : undefined
     };
 
     return widget.render(item, context);
@@ -69,18 +70,10 @@ describe('GitWorktreeWidget', () => {
         expect(render({ cwd: '/tmp/worktree' })).toBe('𖠰 some-worktree');
         expect(mockExecFileSync.mock.calls[0]?.[0]).toBe('git');
         expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual(['rev-parse', '--is-inside-work-tree']);
-        expect(mockExecFileSync.mock.calls[0]?.[2]).toEqual({
-            encoding: 'utf8',
-            stdio: ['pipe', 'pipe', 'ignore'],
-            cwd: '/tmp/worktree'
-        });
+        expectGitExecOptions(mockExecFileSync.mock.calls[0]?.[2], '/tmp/worktree');
         expect(mockExecFileSync.mock.calls[1]?.[0]).toBe('git');
         expect(mockExecFileSync.mock.calls[1]?.[1]).toEqual(['rev-parse', '--git-dir']);
-        expect(mockExecFileSync.mock.calls[1]?.[2]).toEqual({
-            encoding: 'utf8',
-            stdio: ['pipe', 'pipe', 'ignore'],
-            cwd: '/tmp/worktree'
-        });
+        expectGitExecOptions(mockExecFileSync.mock.calls[1]?.[2], '/tmp/worktree');
     });
 
     it('should render with nested worktree', () => {
