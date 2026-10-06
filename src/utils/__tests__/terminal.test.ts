@@ -1,10 +1,10 @@
 import {
     execFileSync,
     spawnSync
-} from 'child_process';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+} from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
     afterEach,
     beforeEach,
@@ -21,7 +21,7 @@ import {
 } from '../terminal';
 import * as terminalWidthCache from '../terminal-width-cache';
 
-vi.mock('child_process', () => ({
+vi.mock('node:child_process', () => ({
     execSync: vi.fn(),
     execFileSync: vi.fn(),
     spawnSync: vi.fn()

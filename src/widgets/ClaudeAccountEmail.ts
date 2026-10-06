@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import * as fs from 'node:fs';
 
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
@@ -27,7 +27,7 @@ export class ClaudeAccountEmailWidget implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         if (context.isPreview) {
-            return formatRawOrLabeledValue(item, LABEL, 'you@example.com');
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(), 'you@example.com');
         }
 
         try {
@@ -39,7 +39,7 @@ export class ClaudeAccountEmailWidget implements Widget {
                 return null;
             }
 
-            return formatRawOrLabeledValue(item, LABEL, email);
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(), email);
         } catch {
             return null;
         }
