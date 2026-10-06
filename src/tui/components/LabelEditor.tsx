@@ -7,6 +7,7 @@ import React from 'react';
 
 import type { WidgetItem } from '../../types/Widget';
 import {
+    clearLabel,
     getLabel,
     setLabel
 } from '../../widgets/shared/raw-or-labeled';
@@ -20,29 +21,32 @@ export interface LabelEditorProps {
 }
 
 export const LabelEditor: React.FC<LabelEditorProps> = ({ widget, defaultLabel, onComplete, onCancel }) => {
-    const { text, display, setText, handleInput } = useTextCursor(getLabel(widget, defaultLabel));
+    const { getText, display, handleInput } = useTextCursor(getLabel(widget, defaultLabel));
 
     useInput((input, key) => {
         if (key.return) {
-            onComplete(setLabel(widget, defaultLabel, text));
+            onComplete(setLabel(widget, getText()));
         } else if (key.escape) {
             onCancel();
         } else if (key.tab) {
-            setText(defaultLabel);
+            onComplete(clearLabel(widget));
         } else {
             handleInput(input, key);
         }
     });
 
     // Quoted so trailing spaces, which usually separate the label from the
-    // value, stay visible
+    // value, stay visible. One Text, because Ink measures a toned or joined
+    // emoji as several columns and a sibling Text would overwrite its end.
     return (
         <Box flexDirection='column'>
             <Text bold>Label</Text>
-            <Text dimColor>←→ move cursor, Ctrl+←→ jump to start/end, Tab default, Enter save, ESC cancel</Text>
-            <Box marginTop={1} flexDirection='row' flexWrap='nowrap'>
-                <Text>{`"${display}"`}</Text>
-                <Text dimColor>{` (default: "${defaultLabel}")`}</Text>
+            <Text dimColor>←→ move cursor, Ctrl+←→ jump to start/end, Tab reset to default, Enter save, ESC cancel</Text>
+            <Box marginTop={1}>
+                <Text>
+                    {`"${display}"`}
+                    <Text dimColor>{` (default: ${JSON.stringify(defaultLabel)})`}</Text>
+                </Text>
             </Box>
         </Box>
     );

@@ -21,13 +21,14 @@ export function getLabel(item: WidgetItem, defaultLabel: string): string {
     return item.metadata?.[LABEL_METADATA_KEY] ?? defaultLabel;
 }
 
-// An override matching the default is dropped so untouched items stay minimal.
-// An empty override is kept: it means "no label" rather than "default".
-export function setLabel(item: WidgetItem, defaultLabel: string, value: string): WidgetItem {
-    if (value === defaultLabel) {
-        return removeMetadataKeys(item, [LABEL_METADATA_KEY]);
-    }
+export function clearLabel(item: WidgetItem): WidgetItem {
+    return removeMetadataKeys(item, [LABEL_METADATA_KEY]);
+}
 
+// Kept even when it equals the current default: widgets whose default changes
+// with their mode apply one override in every mode. An empty override means
+// "no label" rather than "default".
+export function setLabel(item: WidgetItem, value: string): WidgetItem {
     return {
         ...item,
         metadata: {
@@ -47,5 +48,5 @@ export function getLabelKeybind(): CustomKeybind {
 
 export function getLabelModifierText(item: WidgetItem): string | undefined {
     const label = item.metadata?.[LABEL_METADATA_KEY];
-    return label === undefined ? undefined : `(label: "${label}")`;
+    return label === undefined ? undefined : `(label: ${JSON.stringify(label)})`;
 }

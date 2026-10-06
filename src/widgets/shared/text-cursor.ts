@@ -1,5 +1,8 @@
 import type { Key } from 'ink';
-import { useState } from 'react';
+import {
+    useRef,
+    useState
+} from 'react';
 
 import { shouldInsertInput } from '../../utils/input-guards';
 
@@ -10,16 +13,16 @@ export interface TextCursorState {
     cursor: number;
 }
 
-function getGraphemes(str: string): string[] {
-    if ('Segmenter' in Intl) {
-        const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+const segmenter = 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+
+export function getGraphemes(str: string): string[] {
+    if (segmenter) {
         return Array.from(segmenter.segment(str), seg => seg.segment);
     }
     // Fallback to simple character array (won't handle complex emojis perfectly)
     return Array.from(str);
 }
 
-// String offsets of every grapheme boundary, from 0 through text.length
 function getBoundaries(text: string): number[] {
     const boundaries = [0];
     for (const grapheme of getGraphemes(text)) {
@@ -66,31 +69,38 @@ export function applyTextCursorInput(state: TextCursorState, input: string, key:
 
 /** The text with the grapheme under the cursor in inverse video (a trailing block at the end). */
 export function renderTextWithCursor({ text, cursor }: TextCursorState): string {
-    const boundaries = getBoundaries(text);
-    const index = boundaries.findIndex(boundary => boundary >= cursor);
-    const graphemes = getGraphemes(text);
+    let offset = 0;
+    const rendered = getGraphemes(text)
+        .map((grapheme) => {
+            const underCursor = offset === cursor;
+            offset += grapheme.length;
+            return underCursor ? `\x1b[7m${grapheme}\x1b[27m` : grapheme;
+        })
+        .join('');
 
-    return graphemes
-        .map((grapheme, i) => (i === index ? `\x1b[7m${grapheme}\x1b[0m` : grapheme))
-        .join('') + (index >= graphemes.length ? '\x1b[7m \x1b[0m' : '');
+    return cursor === text.length ? `${rendered}\x1b[7m \x1b[27m` : rendered;
 }
 
 export function useTextCursor(initialText: string) {
     const [state, setState] = useState<TextCursorState>({ text: initialText, cursor: initialText.length });
+    const latestState = useRef(state);
 
     return {
         text: state.text,
         display: renderTextWithCursor(state),
-        // Replaces the text and moves the cursor to its end
-        setText: (text: string) => { setState({ text, cursor: text.length }); },
+        getText: (): string => latestState.current.text,
         // Returns whether the key was consumed, so callers can fall through
         // to their own bindings
         handleInput: (input: string, key: Key): boolean => {
-            const next = applyTextCursorInput(state, input, key);
-            if (next) {
-                setState(next);
+            const nextState = applyTextCursorInput(latestState.current, input, key);
+            if (nextState === null) {
+                return false;
             }
-            return next !== null;
+            // Publish edits immediately so another key or Save sees them
+            // even before React renders the updated text.
+            latestState.current = nextState;
+            setState(nextState);
+            return true;
         }
     };
 }

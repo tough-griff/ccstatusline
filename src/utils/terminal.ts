@@ -1,10 +1,10 @@
 import {
     execFileSync,
     spawnSync
-} from 'child_process';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+} from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import { probeWidthNative } from './terminal-native';
 import {
@@ -205,8 +205,8 @@ function probeTerminalWidthWindows(): number | null {
 }
 
 function parsePositiveInteger(value: string): number | null {
-    const parsed = parseInt(value, 10);
-    if (isNaN(parsed) || parsed <= 0) {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
         return null;
     }
 
